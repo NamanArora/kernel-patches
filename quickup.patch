@@ -1,0 +1,202 @@
+From 75f47e3d24c96e2971fee6f8a41cb8f86fa287c8 Mon Sep 17 00:00:00 2001
+From: karthick111 <karthickmostwanted@yahoo.com>
+Date: Sun, 3 Aug 2014 18:53:08 +0530
+Subject: [PATCH] quickwakeup feature for battery saving
+
+---
+ include/linux/quickwakeup.h |  46 ++++++++++++++++++++
+ kernel/power/Kconfig        |   8 ++++
+ kernel/power/Makefile       |   1 +
+ kernel/power/quickwakeup.c  | 104 ++++++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 159 insertions(+)
+ create mode 100755 include/linux/quickwakeup.h
+ create mode 100755 kernel/power/quickwakeup.c
+
+diff --git a/include/linux/quickwakeup.h b/include/linux/quickwakeup.h
+new file mode 100755
+index 0000000..000effa
+--- /dev/null
++++ b/include/linux/quickwakeup.h
+@@ -0,0 +1,46 @@
++/* include/linux/quickwakeup.h
++ *
++ * Copyright (C) 2014 Motorola Mobility LLC.
++ *
++ * This software is licensed under the terms of the GNU General Public
++ * License version 2, as published by the Free Software Foundation, and
++ * may be copied, distributed, and modified under those terms.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++#ifndef _QUICKWAKEUP_H_
++#define _QUICKWAKEUP_H_
++
++#ifdef __KERNEL__
++
++struct quickwakeup_ops {
++	struct list_head list;
++	char *name;
++	int (*qw_execute)(void *data);
++	int (*qw_check)(void *data);
++	int execute;
++	void *data;  /* arbitrary data passed back to user */
++};
++
++#ifdef CONFIG_QUICK_WAKEUP
++
++int quickwakeup_register(struct quickwakeup_ops *ops);
++void quickwakeup_unregister(struct quickwakeup_ops *ops);
++bool quickwakeup_suspend_again(void);
++
++#else
++
++static inline int quickwakeup_register(struct quickwakeup_ops *ops) { return 0; };
++static inline void quickwakeup_unregister(struct quickwakeup_ops *ops) {};
++static inline bool quickwakeup_suspend_again(void) { return 0; };
++
++#endif /* CONFIG_QUICK_WAKEUP */
++
++#endif /* __KERNEL__ */
++
++#endif /* _QUICKWAKEUP_H_ */
+diff --git a/kernel/power/Kconfig b/kernel/power/Kconfig
+index 408f1de..cc6a03e 100755
+--- a/kernel/power/Kconfig
++++ b/kernel/power/Kconfig
+@@ -316,3 +316,11 @@ config SUSPEND_TIME
+ 	  Prints the time spent in suspend in the kernel log, and
+ 	  keeps statistics on the time spent in suspend in
+ 	  /sys/kernel/debug/suspend_time
++
++config QUICK_WAKEUP
++	bool "Quick wakeup"
++	depends on SUSPEND
++	default n
++	---help---
++	  Allow kernel driver to do periodic jobs without resuming the full system
++	  This option can increase battery life on android powered smartphone.
+diff --git a/kernel/power/Makefile b/kernel/power/Makefile
+index 8b76135..fcb2fe9 100755
+--- a/kernel/power/Makefile
++++ b/kernel/power/Makefile
+@@ -17,4 +17,5 @@ obj-$(CONFIG_CONSOLE_EARLYSUSPEND)	+= consoleearlysuspend.o
+ obj-$(CONFIG_FB_EARLYSUSPEND)	+= fbearlysuspend.o
+ obj-$(CONFIG_SUSPEND_TIME)	+= suspend_time.o
+ 
++obj-$(CONFIG_QUICK_WAKEUP)	+= quickwakeup.o
+ obj-$(CONFIG_MAGIC_SYSRQ)	+= poweroff.o
+diff --git a/kernel/power/quickwakeup.c b/kernel/power/quickwakeup.c
+new file mode 100755
+index 0000000..46f9dda
+--- /dev/null
++++ b/kernel/power/quickwakeup.c
+@@ -0,0 +1,104 @@
++/* kernel/power/quickwakeup.c
++ *
++ * Copyright (C) 2014 Motorola Mobility LLC.
++ *
++ * This software is licensed under the terms of the GNU General Public
++ * License version 2, as published by the Free Software Foundation, and
++ * may be copied, distributed, and modified under those terms.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++#include <linux/kernel.h>
++#include <linux/list.h>
++#include <linux/mutex.h>
++#include <linux/quickwakeup.h>
++
++static LIST_HEAD(qw_head);
++static DEFINE_MUTEX(list_lock);
++
++int quickwakeup_register(struct quickwakeup_ops *ops)
++{
++	mutex_lock(&list_lock);
++	list_add(&ops->list, &qw_head);
++	mutex_unlock(&list_lock);
++
++	return 0;
++}
++
++void quickwakeup_unregister(struct quickwakeup_ops *ops)
++{
++	mutex_lock(&list_lock);
++	list_del(&ops->list);
++	mutex_unlock(&list_lock);
++}
++
++static int quickwakeup_check(void)
++{
++	int check = 0;
++	struct quickwakeup_ops *index;
++
++	mutex_lock(&list_lock);
++
++	list_for_each_entry(index, &qw_head, list) {
++		int ret = index->qw_check(index->data);
++		index->execute = ret;
++		check |= ret;
++		pr_debug("%s: %s votes for %s\n", __func__, index->name,
++			ret ? "execute" : "dont care");
++	}
++
++	mutex_unlock(&list_lock);
++
++	return check;
++}
++
++/* return 1 => suspend again
++   return 0 => continue wakeup
++ */
++static int quickwakeup_execute(void)
++{
++	int suspend_again = 0;
++	int final_vote = 1;
++	struct quickwakeup_ops *index;
++
++	mutex_lock(&list_lock);
++
++	list_for_each_entry(index, &qw_head, list) {
++		if (index->execute) {
++			int ret = index->qw_execute(index->data);
++			index->execute = 0;
++			final_vote &= ret;
++			suspend_again = final_vote;
++			pr_debug("%s: %s votes for %s\n", __func__, index->name,
++				ret ? "suspend again" : "wakeup");
++		}
++	}
++
++	mutex_unlock(&list_lock);
++
++	pr_debug("%s: %s\n", __func__,
++		suspend_again ? "suspend again" : "wakeup");
++
++	return suspend_again;
++}
++
++/* return 1 => suspend again
++   return 0 => continue wakeup
++ */
++bool quickwakeup_suspend_again(void)
++{
++	int ret = 0;
++
++	if (quickwakeup_check())
++		ret = quickwakeup_execute();
++
++	pr_debug("%s- returning %d %s\n", __func__, ret,
++		ret ? "suspend again" : "wakeup");
++
++	return ret;
++}

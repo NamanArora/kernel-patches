@@ -1,0 +1,271 @@
+From 3fa18eb9feee1c204b20a63f16136dc2b066581d Mon Sep 17 00:00:00 2001
+From: Cristoforo Cataldo <cristoforo.cataldo@gmail.com>
+Date: Thu, 27 Jun 2013 21:56:07 +0200
+Subject: [PATCH] CK3 tweaks (Credits to Con Kolivas)
+
+* mm-enable_swaptoken_only_when_swap_full.patch:
+  The swap token is only useful in conditions of swap thrash, and actually
+  worsens the common case by causing more swapping. Make it only have an effect
+  when swap is more than half full.
+
+* mm-drop_swap_cache_aggressively.patch:
+  While it may be nice to have a copy of pages on swap once written there, the
+  more garbage we leave in the swapspace the slower any further writes and
+  reads to and from it are. Just free swapcache whenever we can.
+
+* mm-kswapd_inherit_prio-1.patch:
+  When kswapd is awoken due to reclaim by a running task, set the priority of
+  kswapd to that of the calling task thus making memory reclaim cpu activity
+  affected by nice level.
+
+* hz-default_1000.patch:
+  Set default HZ to 1000 which is what most desktop users should still be using.
+
+* hz-no_default_250.patch:
+  Make 250HZ not be the default to discourage desktop users from choosing this
+  option since 1000 will provide better latencies with only miniscule amounts
+  of extra overhead and power consumption.
+
+* preempt-desktop-tune.patch:
+  Enable preempt by default and make people steer away from voluntary.
+---
+ include/linux/swap.h   |  5 +++--
+ kernel/Kconfig.hz      | 19 +++++++++++--------
+ kernel/Kconfig.preempt |  7 ++++---
+ mm/memory.c            |  2 +-
+ mm/swapfile.c          |  9 ++++-----
+ mm/vmscan.c            | 34 ++++++++++++++++++++++++++++++++--
+ 6 files changed, 55 insertions(+), 21 deletions(-)
+
+diff --git a/include/linux/swap.h b/include/linux/swap.h
+index e73799d..c30af3a 100644
+--- a/include/linux/swap.h
++++ b/include/linux/swap.h
+@@ -201,7 +201,7 @@ struct swap_list_t {
+ 	int next;	/* swapfile to be used next */
+ };
+ 
+-/* Swap 50% full? Release swapcache more aggressively.. */
++/* Swap 50% full? */
+ #define vm_swap_full() (nr_swap_pages*2 < total_swap_pages)
+ 
+ /* linux/mm/page_alloc.c */
+@@ -345,9 +345,10 @@ extern struct page *swapin_readahead(swp_entry_t, gfp_t,
+ extern void __put_swap_token(struct mm_struct *);
+ extern void disable_swap_token(struct mem_cgroup *memcg);
+ 
++/* Only allow swap token to have effect if swap is full */
+ static inline int has_swap_token(struct mm_struct *mm)
+ {
+-	return (mm == swap_token_mm);
++	return (mm == swap_token_mm && vm_swap_full());
+ }
+ 
+ static inline void put_swap_token(struct mm_struct *mm)
+diff --git a/kernel/Kconfig.hz b/kernel/Kconfig.hz
+index 94fabd5..f67cd4a 100644
+--- a/kernel/Kconfig.hz
++++ b/kernel/Kconfig.hz
+@@ -4,7 +4,7 @@
+ 
+ choice
+ 	prompt "Timer frequency"
+-	default HZ_250
++	default HZ_1000
+ 	help
+ 	 Allows the configuration of the timer frequency. It is customary
+ 	 to have the timer interrupt run at 1000 Hz but 100 Hz may be more
+@@ -23,13 +23,14 @@ choice
+ 	  with lots of processors that may show reduced performance if
+ 	  too many timer interrupts are occurring.
+ 
+-	config HZ_250
++	config HZ_250_NODEFAULT
+ 		bool "250 HZ"
+ 	help
+-	 250 Hz is a good compromise choice allowing server performance
+-	 while also showing good interactive responsiveness even
+-	 on SMP and NUMA systems. If you are going to be using NTSC video
+-	 or multimedia, selected 300Hz instead.
++	 250 HZ is a lousy compromise choice allowing server interactivity
++	 while also showing desktop throughput and no extra power saving on
++	 laptops. No good for anything.
++
++	 Recommend 100 or 1000 instead.
+ 
+ 	config HZ_300
+ 		bool "300 HZ"
+@@ -43,14 +44,16 @@ choice
+ 		bool "1000 HZ"
+ 	help
+ 	 1000 Hz is the preferred choice for desktop systems and other
+-	 systems requiring fast interactive responses to events.
++	 systems requiring fast interactive responses to events. Laptops
++	 can also benefit from this choice without sacrificing battery life
++	 if dynticks is also enabled.
+ 
+ endchoice
+ 
+ config HZ
+ 	int
+ 	default 100 if HZ_100
+-	default 250 if HZ_250
++	default 250 if HZ_250_NODEFAULT
+ 	default 300 if HZ_300
+ 	default 1000 if HZ_1000
+ 
+diff --git a/kernel/Kconfig.preempt b/kernel/Kconfig.preempt
+index bf987b9..7b9fd59 100644
+--- a/kernel/Kconfig.preempt
++++ b/kernel/Kconfig.preempt
+@@ -1,7 +1,7 @@
+ 
+ choice
+ 	prompt "Preemption Model"
+-	default PREEMPT_NONE
++	default PREEMPT
+ 
+ config PREEMPT_NONE
+ 	bool "No Forced Preemption (Server)"
+@@ -17,7 +17,7 @@ config PREEMPT_NONE
+ 	  latencies.
+ 
+ config PREEMPT_VOLUNTARY
+-	bool "Voluntary Kernel Preemption (Desktop)"
++	bool "Voluntary Kernel Preemption (Nothing)"
+ 	help
+ 	  This option reduces the latency of the kernel by adding more
+ 	  "explicit preemption points" to the kernel code. These new
+@@ -31,7 +31,8 @@ config PREEMPT_VOLUNTARY
+ 	  applications to run more 'smoothly' even when the system is
+ 	  under load.
+ 
+-	  Select this if you are building a kernel for a desktop system.
++	  Select this for no system in particular (choose Preemptible
++	  instead on a desktop if you know what's good for you).
+ 
+ config PREEMPT
+ 	bool "Preemptible Kernel (Low-Latency Desktop)"
+diff --git a/mm/memory.c b/mm/memory.c
+index 6d516db..e5dd0c9 100644
+--- a/mm/memory.c
++++ b/mm/memory.c
+@@ -3066,7 +3066,7 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
+ 	mem_cgroup_commit_charge_swapin(page, ptr);
+ 
+ 	swap_free(entry);
+-	if (vm_swap_full() || (vma->vm_flags & VM_LOCKED) || PageMlocked(page))
++	if ((vma->vm_flags & VM_LOCKED) || PageMlocked(page))
+ 		try_to_free_swap(page);
+ 	unlock_page(page);
+ 	if (swapcache) {
+diff --git a/mm/swapfile.c b/mm/swapfile.c
+index c8f4338..057bcb6 100644
+--- a/mm/swapfile.c
++++ b/mm/swapfile.c
+@@ -289,7 +289,7 @@ static unsigned long scan_swap_map(struct swap_info_struct *si,
+ 		scan_base = offset = si->lowest_bit;
+ 
+ 	/* reuse swap entry of cache-only swap if not busy. */
+-	if (vm_swap_full() && si->swap_map[offset] == SWAP_HAS_CACHE) {
++	if (si->swap_map[offset] == SWAP_HAS_CACHE) {
+ 		int swap_was_freed;
+ 		spin_unlock(&swap_lock);
+ 		swap_was_freed = __try_to_reclaim_swap(si, offset);
+@@ -378,7 +378,7 @@ static unsigned long scan_swap_map(struct swap_info_struct *si,
+ 			spin_lock(&swap_lock);
+ 			goto checks;
+ 		}
+-		if (vm_swap_full() && si->swap_map[offset] == SWAP_HAS_CACHE) {
++		if (si->swap_map[offset] == SWAP_HAS_CACHE) {
+ 			spin_lock(&swap_lock);
+ 			goto checks;
+ 		}
+@@ -393,7 +393,7 @@ static unsigned long scan_swap_map(struct swap_info_struct *si,
+ 			spin_lock(&swap_lock);
+ 			goto checks;
+ 		}
+-		if (vm_swap_full() && si->swap_map[offset] == SWAP_HAS_CACHE) {
++		if (si->swap_map[offset] == SWAP_HAS_CACHE) {
+ 			spin_lock(&swap_lock);
+ 			goto checks;
+ 		}
+@@ -707,8 +707,7 @@ int free_swap_and_cache(swp_entry_t entry)
+ 		 * Not mapped elsewhere, or swap space full? Free it!
+ 		 * Also recheck PageSwapCache now page is locked (above).
+ 		 */
+-		if (PageSwapCache(page) && !PageWriteback(page) &&
+-				(!page_mapped(page) || vm_swap_full())) {
++		if (PageSwapCache(page) && !PageWriteback(page)) {
+ 			delete_from_swap_cache(page);
+ 			SetPageDirty(page);
+ 		}
+diff --git a/mm/vmscan.c b/mm/vmscan.c
+index 2f8ebc8..0d75928 100644
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -985,7 +985,7 @@ static unsigned long shrink_page_list(struct list_head *page_list,
+ 
+ activate_locked:
+ 		/* Not a candidate for swapping, so reclaim swap space. */
+-		if (PageSwapCache(page) && vm_swap_full())
++		if (PageSwapCache(page))
+ 			try_to_free_swap(page);
+ 		VM_BUG_ON(PageActive(page));
+ 		SetPageActive(page);
+@@ -2084,6 +2084,33 @@ static inline bool compaction_ready(struct zone *zone, struct scan_control *sc)
+ }
+ 
+ /*
++ * Helper functions to adjust nice level of kswapd, based on the priority of
++ * the task (p) that called it. If it is already higher priority we do not
++ * demote its nice level since it is still working on behalf of a higher
++ * priority task. With kernel threads we leave it at nice 0.
++ *
++ * We don't ever run kswapd real time, so if a real time task calls kswapd we
++ * set it to highest SCHED_NORMAL priority.
++ */
++static inline int effective_sc_prio(struct task_struct *p)
++{
++	if (likely(p->mm)) {
++		if (rt_task(p))
++			return -20;
++		return task_nice(p);
++	}
++	return 0;
++}
++
++static void set_kswapd_nice(struct task_struct *kswapd, int active)
++{
++	long nice = effective_sc_prio(current);
++
++	if (task_nice(kswapd) > nice || !active)
++		set_user_nice(kswapd, nice);
++}
++
++/*
+  * This is the direct reclaim path, for page-allocating processes.  We only
+  * try to reclaim pages from zones which will satisfy the caller's allocation
+  * request.
+@@ -2949,6 +2976,7 @@ static int kswapd(void *p)
+ void wakeup_kswapd(struct zone *zone, int order, enum zone_type classzone_idx)
+ {
+ 	pg_data_t *pgdat;
++	int active;
+ 
+ 	if (!populated_zone(zone))
+ 		return;
+@@ -2960,7 +2988,9 @@ void wakeup_kswapd(struct zone *zone, int order, enum zone_type classzone_idx)
+ 		pgdat->kswapd_max_order = order;
+ 		pgdat->classzone_idx = min(pgdat->classzone_idx, classzone_idx);
+ 	}
+-	if (!waitqueue_active(&pgdat->kswapd_wait))
++	active = waitqueue_active(&pgdat->kswapd_wait);
++	set_kswapd_nice(pgdat->kswapd, active);
++	if (!active)
+ 		return;
+ 	if (zone_watermark_ok_safe(zone, order, low_wmark_pages(zone), 0, 0))
+ 		return;
+-- 
+1.8.5.1
+

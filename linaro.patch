@@ -1,0 +1,263 @@
+From b9ca7abbd62ef44e9f183bb1aee960265ce532a1 Mon Sep 17 00:00:00 2001
+From: flar2 <asegaert@gmail.com>
+Date: Mon, 29 Jul 2013 20:41:37 -0400
+Subject: [PATCH] Linaro 4.8 fixes
+
+---
+ drivers/crypto/msm/qcedev.c                | 18 +++++++++---------
+ drivers/net/phy/phy.c                      |  2 +-
+ drivers/usb/storage/transport.c            |  4 ++--
+ drivers/video/msm/mipi_novatek.c           |  2 +-
+ drivers/video/msm/mipi_tc358764_dsi2lvds.c |  2 +-
+ fs/namei.c                                 |  8 ++++----
+ net/bluetooth/hci_conn.c                   |  4 ++--
+ net/ipv4/tcp_input.c                       |  3 ++-
+ net/netfilter/nf_conntrack_h323_main.c     |  8 ++++----
+ sound/usb/mixer.c                          |  8 ++++----
+ 10 files changed, 30 insertions(+), 29 deletions(-)
+
+diff --git a/drivers/crypto/msm/qcedev.c b/drivers/crypto/msm/qcedev.c
+index 06c88d3..8764184 100644
+--- a/drivers/crypto/msm/qcedev.c
++++ b/drivers/crypto/msm/qcedev.c
+@@ -835,9 +835,9 @@ static int qcedev_sha_update(struct qcedev_async_req *qcedev_areq,
+ 				struct qcedev_handle *handle)
+ {
+ 	int err = 0;
+-	int i = 0;
+-	int j = 0;
+-	int k = 0;
++	unsigned int i = 0;
++	unsigned int j = 0;
++	unsigned int k = 0;
+ 	int num_entries = 0;
+ 	uint32_t total = 0;
+ 
+@@ -1356,9 +1356,9 @@ static int qcedev_pmem_ablk_cipher(struct qcedev_async_req *qcedev_areq,
+ 						struct qcedev_handle *handle)
+ {
+ 	int err = 0;
+-	int i = 0;
+-	int j = 0;
+-	int k = 0;
++	unsigned int i = 0;
++	unsigned int j = 0;
++	unsigned int k = 0;
+ 	int num_entries = 0;
+ 	uint32_t total = 0;
+ 	struct qcedev_cipher_op_req *saved_req;
+@@ -1567,9 +1567,9 @@ static int qcedev_vbuf_ablk_cipher(struct qcedev_async_req *areq,
+ {
+ 	int err = 0;
+ 	int di = 0;
+-	int i = 0;
+-	int j = 0;
+-	int k = 0;
++	unsigned int i = 0;
++	unsigned int j = 0;
++	unsigned int k = 0;
+ 	uint32_t byteoffset = 0;
+ 	int num_entries = 0;
+ 	uint32_t total = 0;
+diff --git a/drivers/net/phy/phy.c b/drivers/net/phy/phy.c
+index de2d8f5..de2fbc9 100644
+--- a/drivers/net/phy/phy.c
++++ b/drivers/net/phy/phy.c
+@@ -141,7 +141,7 @@ static inline int phy_find_setting(int speed, int duplex)
+ 	return idx < MAX_NUM_SETTINGS ? idx : MAX_NUM_SETTINGS - 1;
+ }
+ 
+-static inline int phy_find_valid(int idx, u32 features)
++static inline int phy_find_valid(unsigned int idx, u32 features)
+ {
+ 	while (idx < MAX_NUM_SETTINGS && !(settings[idx].setting & features))
+ 		idx++;
+diff --git a/drivers/usb/storage/transport.c b/drivers/usb/storage/transport.c
+index b8041c1..aeb3e6e 100644
+--- a/drivers/usb/storage/transport.c
++++ b/drivers/usb/storage/transport.c
+@@ -356,7 +356,7 @@ static int usb_stor_bulk_transfer_sglist(struct us_data *us, unsigned int pipe,
+ int usb_stor_bulk_srb(struct us_data* us, unsigned int pipe,
+ 		      struct scsi_cmnd* srb)
+ {
+-	unsigned int partial;
++	unsigned int partial = 0;
+ 	int result = usb_stor_bulk_transfer_sglist(us, pipe, scsi_sglist(srb),
+ 				      scsi_sg_count(srb), scsi_bufflen(srb),
+ 				      &partial);
+@@ -370,7 +370,7 @@ int usb_stor_bulk_transfer_sg(struct us_data* us, unsigned int pipe,
+ 		void *buf, unsigned int length_left, int use_sg, int *residual)
+ {
+ 	int result;
+-	unsigned int partial;
++	unsigned int partial = 0;
+ 
+ 	
+ 	if (use_sg) {
+diff --git a/drivers/video/msm/mipi_novatek.c b/drivers/video/msm/mipi_novatek.c
+index 84fc297..df5ad8b 100644
+--- a/drivers/video/msm/mipi_novatek.c
++++ b/drivers/video/msm/mipi_novatek.c
+@@ -1768,7 +1768,7 @@ static ssize_t mipi_dsi_3d_barrier_read(struct device *dev,
+ 				struct device_attribute *attr,
+ 				char *buf)
+ {
+-	return snprintf((char *)buf, sizeof(buf), "%u\n", barrier_mode);
++	return snprintf((char *)buf, sizeof(*buf), "%u\n", barrier_mode);
+ }
+ 
+ static ssize_t mipi_dsi_3d_barrier_write(struct device *dev,
+diff --git a/drivers/video/msm/mipi_tc358764_dsi2lvds.c b/drivers/video/msm/mipi_tc358764_dsi2lvds.c
+index b04a8d3..bad1571 100644
+--- a/drivers/video/msm/mipi_tc358764_dsi2lvds.c
++++ b/drivers/video/msm/mipi_tc358764_dsi2lvds.c
+@@ -619,7 +619,7 @@ static ssize_t mipi_d2l_enable_3d_read(struct device *dev,
+ 				struct device_attribute *attr,
+ 				char *buf)
+ {
+-	return snprintf((char *)buf, sizeof(buf), "%u\n", d2l_enable_3d);
++	return snprintf((char *)buf, sizeof(*buf), "%u\n", d2l_enable_3d);
+ }
+ 
+ static ssize_t mipi_d2l_enable_3d_write(struct device *dev,
+diff --git a/fs/namei.c b/fs/namei.c
+index 9451ae2..f03aa87 100644
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -2254,7 +2254,7 @@ int vfs_rmdir(struct inode *dir, struct dentry *dentry)
+ static long do_rmdir(int dfd, const char __user *pathname)
+ {
+ 	int error = 0;
+-	char * name;
++	char * name = NULL;
+ 	struct dentry *dentry;
+ 	struct nameidata nd;
+ 
+@@ -2344,7 +2344,7 @@ int vfs_unlink(struct inode *dir, struct dentry *dentry)
+ static long do_unlinkat(int dfd, const char __user *pathname)
+ {
+ 	int error;
+-	char *name;
++	char *name = NULL;
+ 	struct dentry *dentry;
+ 	struct nameidata nd;
+ 	struct inode *inode = NULL;
+@@ -2696,8 +2696,8 @@ int vfs_rename(struct inode *old_dir, struct dentry *old_dentry,
+ 	struct dentry *old_dentry, *new_dentry;
+ 	struct dentry *trap;
+ 	struct nameidata oldnd, newnd;
+-	char *from;
+-	char *to;
++	char *from = NULL;
++	char *to = NULL;
+ 	int error;
+ 
+ 	error = user_path_parent(olddfd, oldname, &oldnd, &from);
+diff --git a/net/bluetooth/hci_conn.c b/net/bluetooth/hci_conn.c
+index 7ba2a00..6de574e 100644
+--- a/net/bluetooth/hci_conn.c
++++ b/net/bluetooth/hci_conn.c
+@@ -253,7 +253,7 @@ void hci_le_start_enc(struct hci_conn *conn, __le16 ediv, __u8 rand[8],
+ }
+ EXPORT_SYMBOL(hci_le_start_enc);
+ 
+-void hci_le_ltk_reply(struct hci_conn *conn, u8 ltk[16])
++void hci_le_ltk_reply(struct hci_conn *conn, __u8 ltk[16])
+ {
+ 	struct hci_dev *hdev = conn->hdev;
+ 	struct hci_cp_le_ltk_reply cp;
+@@ -263,7 +263,7 @@ void hci_le_ltk_reply(struct hci_conn *conn, u8 ltk[16])
+ 	memset(&cp, 0, sizeof(cp));
+ 
+ 	cp.handle = cpu_to_le16(conn->handle);
+-	memcpy(cp.ltk, ltk, sizeof(ltk));
++	memcpy(cp.ltk, ltk, sizeof(*ltk));
+ 
+ 	hci_send_cmd(hdev, HCI_OP_LE_LTK_REPLY, sizeof(cp), &cp);
+ }
+diff --git a/net/ipv4/tcp_input.c b/net/ipv4/tcp_input.c
+index 1069731..4a606d2 100644
+--- a/net/ipv4/tcp_input.c
++++ b/net/ipv4/tcp_input.c
+@@ -3394,10 +3394,11 @@ static void tcp_sack_remove(struct tcp_sock *tp)
+ 		return;
+ 	}
+ 
++	BUG_ON(num_sacks > 4); 
+ 	for (this_sack = 0; this_sack < num_sacks;) {
+ 		
+ 		if (!before(tp->rcv_nxt, sp->start_seq)) {
+-			int i;
++			int i = 0;
+ 
+ 			
+ 			WARN_ON(before(tp->rcv_nxt, sp->end_seq));
+diff --git a/net/netfilter/nf_conntrack_h323_main.c b/net/netfilter/nf_conntrack_h323_main.c
+index ffbc041..c888ac4 100644
+--- a/net/netfilter/nf_conntrack_h323_main.c
++++ b/net/netfilter/nf_conntrack_h323_main.c
+@@ -558,8 +558,8 @@ static int h245_help(struct sk_buff *skb, unsigned int protoff,
+ {
+ 	static MultimediaSystemControlMessage mscm;
+ 	unsigned char *data = NULL;
+-	int datalen;
+-	int dataoff;
++	int datalen = 0;
++	int dataoff = 0;
+ 	int ret;
+ 
+ 	
+@@ -1094,8 +1094,8 @@ static int q931_help(struct sk_buff *skb, unsigned int protoff,
+ {
+ 	static Q931 q931;
+ 	unsigned char *data = NULL;
+-	int datalen;
+-	int dataoff;
++	int datalen = 0;
++	int dataoff = 0;
+ 	int ret;
+ 
+ 	
+diff --git a/sound/usb/mixer.c b/sound/usb/mixer.c
+index 14367d8..07d6896 100644
+--- a/sound/usb/mixer.c
++++ b/sound/usb/mixer.c
+@@ -1271,7 +1271,7 @@ static int parse_audio_mixer_unit(struct mixer_build *state, int unitid, void *r
+ static int mixer_ctl_procunit_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
+ {
+ 	struct usb_mixer_elem_info *cval = kcontrol->private_data;
+-	int err, val;
++	int err, val = 0;
+ 
+ 	err = get_cur_ctl_value(cval, cval->control << 8, &val);
+ 	if (err < 0 && cval->mixer->ignore_ctl_error) {
+@@ -1288,7 +1288,7 @@ static int mixer_ctl_procunit_get(struct snd_kcontrol *kcontrol, struct snd_ctl_
+ static int mixer_ctl_procunit_put(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
+ {
+ 	struct usb_mixer_elem_info *cval = kcontrol->private_data;
+-	int val, oval, err;
++	int val, oval = 0, err;
+ 
+ 	err = get_cur_ctl_value(cval, cval->control << 8, &oval);
+ 	if (err < 0) {
+@@ -1529,7 +1529,7 @@ static int mixer_ctl_selector_info(struct snd_kcontrol *kcontrol, struct snd_ctl
+ static int mixer_ctl_selector_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
+ {
+ 	struct usb_mixer_elem_info *cval = kcontrol->private_data;
+-	int val, err;
++	int val = 0, err;
+ 
+ 	err = get_cur_ctl_value(cval, cval->control << 8, &val);
+ 	if (err < 0) {
+@@ -1547,7 +1547,7 @@ static int mixer_ctl_selector_get(struct snd_kcontrol *kcontrol, struct snd_ctl_
+ static int mixer_ctl_selector_put(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
+ {
+ 	struct usb_mixer_elem_info *cval = kcontrol->private_data;
+-	int val, oval, err;
++	int val, oval = 0, err;
+ 
+ 	err = get_cur_ctl_value(cval, cval->control << 8, &oval);
+ 	if (err < 0) {
+-- 
+1.8.4
+
